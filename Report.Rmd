@@ -1,0 +1,144 @@
+---
+title: "TCGA Analysis"
+author: "J Stofel"
+date: "July 21, 2015"
+output: html_document
+---
+
+# Introduction
+
+We use data in The Cancer Genome Atlas [(TCGA)](https://tcga-data.nci.nih.gov/tcga/) and the [Tumor Portal](http://www.tumorportal.org/) to look for genes with cancer-related mutations to see if there are identifiable patters of co-expression or mutual exclusivity.
+
+# Data and Methods
+
+## TCGA data 
+The TCGA data was downloaded on <date> as a <file type> file, then saved to an R binary and loaded.  This data package contains 21 objects, 14 data objects and 5 value objects (? we can get a list of the objects with ls(), and we can see them in RStudio on the Environment pane, but how do we list what they are in a markdown report?).
+```{r tcgaData}
+   load("homework.Rdata")
+   ls()
+```
+
+## Mutation data
+
+This data is from the [Tumor Portal](http://www.tumorportal.org/). It was downloaded to a text file 21 July 2015. Since this is a large file, it takes a while to load. To save time while creating and debugging this file, a copy was saved as Rdata binary, which can be loaded a bit more quickly.
+
+```{r grabMutations, cache=TRUE}
+if (file.exists("saved_panCanMut.Rdata")) {
+  load("saved_panCanMut.Rdata")
+} else {
+  panCanMut <-
+             read.table("PanCan.maf", header=TRUE, sep="\t",
+             stringsAsFactors = FALSE)
+   save(panCanMut, file = "saved_panCanMut.Rdata")
+}
+```
+The Pan Cancer mutations file has `r dim(panCanMut)[2]` variables (columns) and `r dim(panCanMut)[1]` records (rows). 
+
+```{r show_panCanMut}
+   colnames(panCanMut)
+   panCanMut[1:3,]
+```
+
+Each row in the file represents a single mutation.  There may be more than one mutation per patient - might there also be > 1 tumor type per person?
+We will look at a few genes of interest.  For example, PTEN (Phosphatase and tensin homolog) is a tumor suppressor.  Mutations in this gene that  cause it to malfunction will lead to many different cancers.
+
+```{r grabPten}
+ ptenMut <- panCanMut[panCanMut[,"gene"]=="PTEN", ]
+ dim(ptenMut)
+ ptenMut[1:3,]
+```
+ What are the types of mutations?
+ All types are bad except for the ones labeled "Silent".  Note, however, that if you want to look at the different types in more detail, you will need to be aware of and correct for the labeling inconsistencies. For example, Splice_site vs Splice_Site and Missense vs Missense_Mutation.
+ 
+```{r ptenMuts}
+  table(ptenMut[, "type"])
+```
+ 
+And Keith gives an example of uncleaned clincial data re Taxol and all the name variations (generic vs brand name and misspellings thereof).
+ 
+ Another question: Is 500 "a lot" of mutations?  Look at your list of "top mutated" genes and the Tumor Portal list of "top mutated" genes. Are they the same?  You have TTN as a "top mutated" gene but Tumor Portal does not - why not?
+ 
+ Look at the genes in GeneCards website to get more info about the specific genes.  For example, TTN gene.  This is colloqually known as "Titan". It is 300 kb long (very large). So note that the absolute number of mutations is less important than the ratio of mutations to the size of the gene...
+
+Also, be aware of whether you are looking at number of mutations in a gene or number of patients with mutations in a gene (some patients can have < 1 mutation in a given gene).
+
+Now look at RNA expression data.  The rnaSeq2Data is a large matrix orgainzed by patients (rows) and genes (columns) with expression values in the cells. Question - what do the numerical values in the cells represent?
+
+```{r checkExpression}
+ # Size of matrix
+ length(rnaSeq2Data)
+ # Rows by columns
+ dim(rnaSeq2Data)
+ # Row names
+ rownames(rnaSeq2Data)
+ # Column names
+ cnames <- colnames(rnaSeq2Data)
+ cnames[1:3]
+ #rnaSeq2Data["PTEN",]
+ plot(rnaSeq2Data["PTEN",])
+
+```
+The above is too big  - try again looking at just first 1000 patients
+
+```{r plotFirst1000}
+ plot(rnaSeq2Data["PTEN",1:1000])
+```
+What about the specific thing going on between 4000 and 6000?
+
+```{r plotSpecial1000}
+ plot(rnaSeq2Data["PTEN",4000:6000])
+```
+
+Here's a more detailed look, but how would we find out what is going on
+here?  Appears to be a run of patients that are "noticeably" different than the rest.  Are they really different?  If so, why?
+```{r plotSpecial500}
+ plot(rnaSeq2Data["PTEN",4000:5000])
+```
+
+Now look at the data another way. What if we have decided that the issue above is a data problem, and we want to take a step back look at the data without focussing on that - what if we sample the data a different way?
+
+ Try a different method -- thin the data systematically by sampling patients 1-20000 by 10s (you get a sample of 2000).
+
+```{r plotFirst20000by10}
+ plot(snp6Data["PTEN", seq(1,20000,10)])
+```
+This is still not the best sampling, as we are systematically sampling from an ordered list (ordered by patient characteristics). Try a random sample of 2000 patients selected from the first 20000.  We set the seed for randomizing, so the random sample is reproducible.
+
+```{r plotFirst20000Random2000}
+ set.seed(3)
+ rnorm(10)
+ sample(1:20000,2000)
+ plot(snp6Data["PTEN", sample(1:20000,2000)])
+```
+Copy number is in the snp6 data.... 
+
+Who has PTEN mutations? (what patients)
+```{r namPten}
+
+ ptenMutNames <- substr(ptenMut[,"patient"], 1, 12)
+ ptenMutNames <- unique(ptenMutNames)
+ ptenMutNames <- ptenMutNames[substr(ptenMutNames,1,4) == "TCGA"]
+ length(ptenMutNames)
+ matchedToMut <- match(ptenMutNames, substr(colnames(snp6Data),1,12))
+ 
+
+```
+
+The pancan mutation table lists all mutations and this can include cases where same gene is mutated more than once in a given person. we need to match pten copy number and mutation data by sample name. 
+
+we need to exlcude multiple matches
+
+we want to check for co-occurrence / mutual exclusivity by tissue type to check for associations.
+
+we can do this with Fisher's exact tests with loss CN < -0.5.
+
+### Session Information
+
+```{r showInfo}
+#This file was run in the following location:
+getwd()
+#Under the following conditions:
+sessionInfo()
+
+```
+
